@@ -1,6 +1,6 @@
 ## ETSformer - Pytorch (wip)
 
-Implementation of ETSformer, state of the art time-series Transformer, in Pytorch
+Implementation of <a href="https://arxiv.org/abs/2202.01381">ETSformer</a>, state of the art time-series Transformer, in Pytorch
 
 ## Citation
 
