@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn, einsum
 
+from scipy.fftpack import next_fast_len
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
 
@@ -29,7 +30,28 @@ def InputEmbedding(time_features, model_dim, kernel = 3, dropout = 0.):
         Rearrange('b d n -> b n d'),
     )
 
-class NaiveMHESA(nn.Module):
+# multi-head exponential smoothing attention
+
+def conv1d_fft(x, weights, dim = -2, weight_dim = -1):
+    # Algorithm 3 in paper
+
+    N = x.shape[dim]
+    M = weights.shape[weight_dim]
+
+    fast_len = next_fast_len(N + M - 1)
+
+    f_x = torch.fft.rfft(x, n = fast_len, dim = dim)
+    f_weight = torch.fft.rfft(weights, n = fast_len, dim = weight_dim)
+
+    f_v_weight = f_x * rearrange(f_weight.conj(), '... -> ... 1')
+    out = torch.fft.irfft(f_v_weight, fast_len, dim = dim)
+    out = out.roll(-1, dims = (dim,))
+
+    indices = torch.arange(start = fast_len - N, end = fast_len, dtype = torch.long, device = x.device)
+    out = out.index_select(dim, indices)
+    return out
+
+class MHESA(nn.Module):
     def __init__(
         self,
         *,
@@ -49,9 +71,31 @@ class NaiveMHESA(nn.Module):
         self.project_in = nn.Linear(dim, inner_dim)
         self.project_out = nn.Linear(inner_dim, dim)
 
-    def forward(self, x):
+    def naive_Aes(self, x, weights):
+        n, h = x.shape[-2], self.heads
+
         # in appendix A.1 - Algorithm 2
 
+        arange = torch.arange(n, device = x.device)
+
+        weights = repeat(weights, '... l -> ... t l', t = n)
+        indices = repeat(arange, 'l -> h t l', h = h, t = n)
+
+        indices = (indices - rearrange(arange + 1, 't -> 1 t 1')) % n
+
+        weights = weights.gather(-1, indices)
+        weights = self.dropout(weights)
+
+        # causal
+
+        weights = weights.tril()
+
+        # multiply
+
+        output = einsum('b h n d, h m n -> b h m d', x, weights)
+        return output
+
+    def forward(self, x, naive = False):
         b, n, d, h, device = *x.shape, self.heads, x.device
 
         # linear project in
@@ -81,21 +125,10 @@ class NaiveMHESA(nn.Module):
         arange = torch.arange(n, device = device)
         weights = alpha * (1 - alpha) ** torch.flip(arange, dims = (0,))
 
-        weights = repeat(weights, '... l -> ... t l', t = n)
-        indices = repeat(arange, 'l -> h t l', h = h, t = n)
-
-        indices = (indices - rearrange(arange + 1, 't -> 1 t 1')) % n
-
-        weights = weights.gather(-1, indices)
-        weights = self.dropout(weights)
-
-        # causal
-
-        weights = weights.tril()
-
-        # multiply
-
-        output = einsum('b h n d, h m n -> b h m d', x, weights)
+        if naive:
+            output = self.naive_Aes(x, weights)
+        else:
+            output = conv1d_fft(x, weights)
 
         # get initial state contribution
 
