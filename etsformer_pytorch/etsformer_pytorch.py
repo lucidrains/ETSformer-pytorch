@@ -29,10 +29,45 @@ def InputEmbedding(time_features, model_dim, kernel = 3, dropout = 0.):
         Rearrange('b d n -> b n d'),
     )
 
+class FrequencyAttention(nn.Module):
+    def __init__(
+        self,
+        *,
+        K = 4
+    ):
+        super().__init__()
+        self.K = K
+
+    def forward(self, x):
+        freqs = torch.fft.rfft(x, dim = 1)
+
+        # get amplitudes
+
+        amp = freqs.abs()
+
+        # topk amplitudes - for seasonality, branded as attention
+
+        _, topk_amp_indices = amp.topk(k = self.K, dim = 1)
+
+        # scatter back
+
+        topk_freqs = torch.zeros_like(freqs).scatter(1, topk_amp_indices, freqs)
+
+        # inverse fft
+
+        return torch.fft.irfft(topk_freqs, dim = 1)
+
 # main class
 
 class ETSFormer(nn.Module):
-    def __init__(self, time_features, model_dim):
+    def __init__(
+        self,
+        *,
+        time_features,
+        model_dim,
+        heads = 8,
+        K = 4
+    ):
         super().__init__()
 
     def forward(self, x):
