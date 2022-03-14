@@ -1,3 +1,5 @@
+<img src="./etsformer.png" width="400px"></img>
+
 ## ETSformer - Pytorch (wip)
 
 Implementation of <a href="https://arxiv.org/abs/2202.01381">ETSformer</a>, state of the art time-series Transformer, in Pytorch
