@@ -13,7 +13,6 @@ setup(
     'artificial intelligence',
     'deep learning',
     'transformers',
-    'attention-mechanism',
     'time-series',
     'forecasting'
   ],
