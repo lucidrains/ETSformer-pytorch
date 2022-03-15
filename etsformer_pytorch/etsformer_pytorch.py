@@ -193,11 +193,11 @@ class FrequencyAttention(nn.Module):
 
         # topk amplitudes - for seasonality, branded as attention
 
-        _, topk_amp_indices = amp.topk(k = self.K, dim = 1)
+        topk_amp, _ = amp.topk(k = self.K, dim = 1, sorted = True)
 
-        # scatter back
+        # mask out all freqs with lower amplitudes than the lowest value of the topk above
 
-        topk_freqs = torch.zeros_like(freqs).scatter(1, topk_amp_indices, freqs)
+        topk_freqs = freqs.masked_fill(amp < topk_amp[:, -1:], 0.+0.j)
 
         # inverse fft
 
