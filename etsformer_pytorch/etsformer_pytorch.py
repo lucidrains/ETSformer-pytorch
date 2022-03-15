@@ -245,12 +245,18 @@ class GrowthDampening(nn.Module):
 
         dampen_factor = self.dampen_factor.sigmoid()
 
+        # like level stack, it takes the last growth for forecasting
+
         last_growth = growth[:, -1]
         last_growth = rearrange(last_growth, 'b l (h d) -> b l 1 h d', h = h)
+
+        # prepare dampening factors per head and the powers
 
         dampen_factor = rearrange(dampen_factor, 'h -> 1 1 1 h 1')
         powers = (torch.arange(num_steps_forecast, device = device) + 1)
         powers = rearrange(powers, 'n -> 1 1 n 1 1')
+
+        # following Eq(2) in the paper
 
         dampened_growth = last_growth * (dampen_factor ** powers).cumsum(dim = 2)
         return rearrange(dampened_growth, 'b l n h d -> b l n (h d)')
