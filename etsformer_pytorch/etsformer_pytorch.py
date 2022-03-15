@@ -1,3 +1,4 @@
+from math import pi
 import torch
 import torch.nn.functional as F
 from torch import nn, einsum
@@ -10,6 +11,17 @@ from einops.layers.torch import Rearrange
 
 def exists(val):
     return val is not None
+
+# fourier helpers
+
+def fourier_extrapolate(signal, start, end):
+    device = signal.device
+    fhat = torch.fft.fft(signal)
+    fhat_len = fhat.shape[-1]
+    time = torch.linspace(start, end - 1, end - start, device = device, dtype = torch.complex64)
+    freqs = torch.linspace(0, fhat_len - 1, fhat_len, device = device, dtype = torch.complex64)
+    res = fhat[..., None, :] * (1.j * 2 * pi * freqs[..., None, :] * time[..., :, None] / fhat_len).exp() / fhat_len
+    return res.sum(dim = -1).real
 
 # classes
 
@@ -320,8 +332,12 @@ class ETSFormer(nn.Module):
         latent_growths = torch.stack(latent_growths, dim = -2)
         latent_seasonals = torch.stack(latent_seasonals, dim = -2)
 
+        latent_seasonals = rearrange(latent_seasonals, 'b n l d -> b l d n')
+        extrapolated_seasonals = fourier_extrapolate(latent_seasonals, x.shape[1], x.shape[1] + num_steps_forecast)
+        extrapolated_seasonals = rearrange(extrapolated_seasonals, 'b l d n -> b l n d')
+
         dampened_growths = self.growth_dampening_module(latent_growths, num_steps_forecast = num_steps_forecast)
         level = self.level_stack(x, num_steps_forecast = num_steps_forecast)
 
-        summed_latents = dampened_growths.sum(dim = 1)
+        summed_latents = dampened_growths.sum(dim = 1) + extrapolated_seasonals.sum(dim = 1)
         return level + self.latents_to_time_features(summed_latents)
