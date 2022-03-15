@@ -14,7 +14,7 @@ $ pip install etsformer-pytorch
 
 ```python
 import torch
-from etsformer_pytorch.etsformer_pytorch import ETSFormer
+from etsformer_pytorch import ETSFormer
 
 model = ETSFormer(
     time_features = 4,
