@@ -22,7 +22,6 @@ model = ETSFormer(
     embed_kernel_size = 3,          # kernel size for 1d conv for input embedding
     layers = 2,                     # number of encoder and corresponding decoder layers
     heads = 8,                      # number of exponential smoothing attention heads
-    dim_head = 32,                  # dimension per head
     K = 4,                          # num frequencies with highest amplitude to keep (attend to)
     dropout = 0.2                   # dropout (in paper they did 0.2)
 )

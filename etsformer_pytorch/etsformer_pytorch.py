@@ -40,9 +40,11 @@ class FeedForwardBlock(nn.Module):
         super().__init__()
         self.norm = nn.LayerNorm(dim)
         self.ff = FeedForward(dim, **kwargs)
+        self.post_norm = nn.LayerNorm(dim)
 
     def forward(self, x):
-        return self.norm(x + self.ff(x))
+        x = self.norm(x)
+        return self.post_norm(x + self.ff(x))
 
 # encoder related classes
 
@@ -73,19 +75,17 @@ class MHESA(nn.Module):
         *,
         dim,
         heads = 8,
-        dim_head = 32,
         dropout = 0.
     ):
         super().__init__()
-        inner_dim = heads * dim_head
         self.heads = heads
-        self.initial_state = nn.Parameter(torch.randn(heads, dim_head))
+        self.initial_state = nn.Parameter(torch.randn(heads, dim // heads))
 
         self.dropout = nn.Dropout(dropout)
         self.alpha = nn.Parameter(torch.randn(heads))
 
-        self.project_in = nn.Linear(dim, inner_dim)
-        self.project_out = nn.Linear(inner_dim, dim)
+        self.project_in = nn.Linear(dim, dim)
+        self.project_out = nn.Linear(dim, dim)
 
     def naive_Aes(self, x, weights):
         n, h = x.shape[-2], self.heads
@@ -230,6 +230,31 @@ class LevelStack(nn.Module):
     def forward(self, x, num_steps_forecast):
         return repeat(x[:, -1], 'b d -> b n d', n = num_steps_forecast)
 
+class GrowthDampening(nn.Module):
+    def __init__(
+        self,
+        dim,
+        heads = 8
+    ):
+        super().__init__()
+        self.heads = heads
+        self.dampen_factor = nn.Parameter(torch.randn(heads))
+
+    def forward(self, growth, *, num_steps_forecast):
+        device, h = growth.device, self.heads
+
+        dampen_factor = self.dampen_factor.sigmoid()
+
+        last_growth = growth[:, -1]
+        last_growth = rearrange(last_growth, 'b l (h d) -> b l 1 h d', h = h)
+
+        dampen_factor = rearrange(dampen_factor, 'h -> 1 1 1 h 1')
+        powers = (torch.arange(num_steps_forecast, device = device) + 1)
+        powers = rearrange(powers, 'n -> 1 1 n 1 1')
+
+        dampened_growth = last_growth * (dampen_factor ** powers).cumsum(dim = 2)
+        return rearrange(dampened_growth, 'b l n h d -> b l n (h d)')
+
 # main class
 
 class ETSFormer(nn.Module):
@@ -241,11 +266,11 @@ class ETSFormer(nn.Module):
         embed_kernel_size = 3,
         layers = 2,
         heads = 8,
-        dim_head = 32,
         K = 4,
         dropout = 0.
     ):
         super().__init__()
+        assert (model_dim % heads) == 0, 'model dimension must be divisible by number of heads'
         self.embed = InputEmbedding(time_features, model_dim, kernel_size = embed_kernel_size, dropout = dropout)
 
         self.encoder_layers = nn.ModuleList([])
@@ -255,30 +280,42 @@ class ETSFormer(nn.Module):
 
             self.encoder_layers.append(nn.ModuleList([
                 FrequencyAttention(K = K, dropout = dropout),
-                MHESA(dim = model_dim, dim_head = dim_head, heads = heads, dropout = dropout),
-                nn.LayerNorm(model_dim),
+                MHESA(dim = model_dim, heads = heads, dropout = dropout),
                 FeedForwardBlock(dim = model_dim) if not is_last_layer else None,
                 Level(time_features = time_features, model_dim = model_dim)
             ]))
 
+        self.growth_dampening_module = GrowthDampening(dim = model_dim, heads = heads)
+
+        self.latents_to_time_features = nn.Linear(model_dim, time_features)
         self.level_stack = LevelStack()
 
     def forward(self, x, *, num_steps_forecast):
         z = self.embed(x)
 
-        for freq_attn, mhes_attn, attn_post_ln, ff_block, level in self.encoder_layers:
+        latent_growths = []
+        latent_seasonals = []
+
+        for freq_attn, mhes_attn, ff_block, level in self.encoder_layers:
             latent_seasonal = freq_attn(z)
             z = z - latent_seasonal
 
             latent_growth = mhes_attn(z)
-            z = z -latent_growth
-
-            z = attn_post_ln(z)
+            z = z - latent_growth
 
             if exists(ff_block):
                 z = ff_block(z)
 
             x = level(x, latent_seasonal, latent_growth)
 
+            latent_growths.append(latent_growth)
+            latent_seasonals.append(latent_seasonal)
+
+        latent_growths = torch.stack(latent_growths, dim = -2)
+        latent_seasonals = torch.stack(latent_seasonals, dim = -2)
+
+        dampened_growths = self.growth_dampening_module(latent_growths, num_steps_forecast = num_steps_forecast)
         level = self.level_stack(x, num_steps_forecast = num_steps_forecast)
-        return level
+
+        summed_latents = dampened_growths.sum(dim = 1)
+        return level + self.latents_to_time_features(summed_latents)
