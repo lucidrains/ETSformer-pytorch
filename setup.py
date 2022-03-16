@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'ETSformer-pytorch',
   packages = find_packages(exclude=[]),
-  version = '0.0.2',
+  version = '0.0.3',
   license='MIT',
   description = 'ETSTransformer - Exponential Smoothing Transformer for Time-Series Forecasting - Pytorch',
   author = 'Phil Wang',

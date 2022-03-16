@@ -232,7 +232,7 @@ class Level(nn.Module):
 
         growth = self.to_growth(latent_growth)
         growth_smoothing_weights = (1 - alpha) ** powers
-        growth_term = conv1d_fft(x, Aes_weights)
+        growth_term = conv1d_fft(x, growth_smoothing_weights)
 
         return seasonal_normalized_term + growth_term
 
