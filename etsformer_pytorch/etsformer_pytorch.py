@@ -324,7 +324,7 @@ class ETSFormer(nn.Module):
             if exists(ff_block):
                 z = ff_block(z)
 
-            x = level(x, latent_seasonal, latent_growth)
+            x = level(x, latent_growth, latent_seasonal)
 
             latent_growths.append(latent_growth)
             latent_seasonals.append(latent_seasonal)
