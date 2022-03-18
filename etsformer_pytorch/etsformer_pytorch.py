@@ -308,7 +308,12 @@ class ETSFormer(nn.Module):
         self.latents_to_time_features = nn.Linear(model_dim, time_features)
         self.level_stack = LevelStack()
 
-    def forward(self, x, *, num_steps_forecast):
+    def forward(
+        self,
+        x,
+        *,
+        num_steps_forecast = 0
+    ):
         z = self.embed(x)
 
         latent_growths = []
@@ -332,6 +337,9 @@ class ETSFormer(nn.Module):
         latent_growths = torch.stack(latent_growths, dim = -2)
         latent_seasonals = torch.stack(latent_seasonals, dim = -2)
 
+        if num_steps_forecast == 0:
+            return latent_growths, latent_seasonals
+
         latent_seasonals = rearrange(latent_seasonals, 'b n l d -> b l d n')
         extrapolated_seasonals = fourier_extrapolate(latent_seasonals, x.shape[1], x.shape[1] + num_steps_forecast)
         extrapolated_seasonals = rearrange(extrapolated_seasonals, 'b l d n -> b l n d')
@@ -340,4 +348,5 @@ class ETSFormer(nn.Module):
         level = self.level_stack(x, num_steps_forecast = num_steps_forecast)
 
         summed_latents = dampened_growths.sum(dim = 1) + extrapolated_seasonals.sum(dim = 1)
-        return level + self.latents_to_time_features(summed_latents)
+        forecasted = level + self.latents_to_time_features(summed_latents)
+        return forecasted
