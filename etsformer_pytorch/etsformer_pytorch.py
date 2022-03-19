@@ -279,8 +279,8 @@ class ETSFormer(nn.Module):
     def __init__(
         self,
         *,
-        time_features,
         model_dim,
+        time_features = 1,
         embed_kernel_size = 3,
         layers = 2,
         heads = 8,
@@ -314,6 +314,11 @@ class ETSFormer(nn.Module):
         *,
         num_steps_forecast = 0
     ):
+        one_time_feature = x.ndim == 2
+
+        if one_time_feature:
+            x = rearrange(x, 'b n -> b n 1')
+
         z = self.embed(x)
 
         latent_growths = []
@@ -349,4 +354,8 @@ class ETSFormer(nn.Module):
 
         summed_latents = dampened_growths.sum(dim = 1) + extrapolated_seasonals.sum(dim = 1)
         forecasted = level + self.latents_to_time_features(summed_latents)
+
+        if one_time_feature:
+            forecasted = rearrange(forecasted, 'b n 1 -> b n')
+
         return forecasted
