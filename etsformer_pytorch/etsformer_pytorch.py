@@ -294,7 +294,7 @@ class ETSFormer(nn.Module):
         self.encoder_layers = nn.ModuleList([])
 
         for ind in range(layers):
-            is_last_layer = (ind - 1) == layers
+            is_last_layer = ind == (layers - 1)
 
             self.encoder_layers.append(nn.ModuleList([
                 FrequencyAttention(K = K, dropout = dropout),
