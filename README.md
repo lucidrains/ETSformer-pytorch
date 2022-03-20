@@ -31,6 +31,36 @@ timeseries = torch.randn(1, 1024, 4)
 pred = model(timeseries, num_steps_forecast = 32) # (1, 32, 4) - (batch, num steps forecast, num time features)
 ```
 
+For using ETSFormer for classification, using cross attention pooling on all latents and level output
+
+```python
+import torch
+from etsformer_pytorch import ETSFormer, ClassificationWrapper
+
+etsformer = ETSFormer(
+    time_features = 1,
+    model_dim = 512,
+    embed_kernel_size = 3,
+    layers = 2,
+    heads = 8,
+    K = 4,
+    dropout = 0.2
+)
+
+adapter = ClassificationWrapper(
+    etsformer = etsformer,
+    dim_head = 32,
+    heads = 16,
+    dropout = 0.2,
+    level_kernel_size = 5,
+    num_classes = 10
+)
+
+timeseries = torch.randn(1, 1024)
+
+logits = adapter(timeseries) # (1, 10)
+```
+
 ## Citation
 
 ```bibtex

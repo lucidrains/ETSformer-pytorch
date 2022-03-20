@@ -295,6 +295,9 @@ class ETSFormer(nn.Module):
     ):
         super().__init__()
         assert (model_dim % heads) == 0, 'model dimension must be divisible by number of heads'
+        self.model_dim = model_dim
+        self.time_features = time_features
+
         self.embed = InputEmbedding(time_features, model_dim, kernel_size = embed_kernel_size, dropout = dropout)
 
         self.encoder_layers = nn.ModuleList([])
@@ -365,3 +368,86 @@ class ETSFormer(nn.Module):
             forecasted = rearrange(forecasted, 'b n 1 -> b n')
 
         return forecasted
+
+# classification wrapper
+
+class ClassificationWrapper(nn.Module):
+    def __init__(
+        self,
+        *,
+        etsformer,
+        num_classes = 10,
+        heads = 16,
+        dim_head = 32,
+        level_kernel_size = 3,
+        dropout = 0.
+    ):
+        super().__init__()
+        assert isinstance(etsformer, ETSFormer)
+        self.etsformer = etsformer
+        model_dim = etsformer.model_dim
+        time_features = etsformer.time_features
+
+        inner_dim = dim_head * heads
+        self.scale = dim_head ** -0.5
+        self.dropout = nn.Dropout(dropout)
+
+        self.type_growth = nn.Parameter(torch.randn(model_dim) * 1e-5)
+        self.type_seasonal = nn.Parameter(torch.randn(model_dim) * 1e-5)
+
+        self.queries = nn.Parameter(torch.randn(heads, dim_head))
+
+        self.growth_and_seasonal_to_kv = nn.Sequential(
+            nn.Linear(model_dim, inner_dim * 2, bias = False),
+            Rearrange('... n (kv h d) -> kv ... h n d', kv = 2, h = heads)
+        )
+
+        self.level_to_kv = nn.Sequential(
+            Rearrange('b n t -> b t n'),
+            nn.Conv1d(time_features, inner_dim * 2, level_kernel_size, bias = False, padding = level_kernel_size // 2),
+            Rearrange('b (kv h d) n -> kv b h n d', kv = 2, h = heads)
+        )
+
+        self.to_out = nn.Linear(inner_dim, model_dim)
+
+        self.to_logits = nn.Sequential(
+            nn.LayerNorm(model_dim),
+            nn.Linear(model_dim, num_classes)
+        )
+
+    def forward(self, timeseries):
+        latent_growths, latent_seasonals, level_output = self.etsformer(timeseries)
+
+        latent_growths = latent_growths.mean(dim = -2)
+        latent_seasonals = latent_seasonals.mean(dim = -2)
+
+        # differentiate between growth and seasonal
+
+        latent_growths = latent_growths + self.type_growth
+        latent_seasonals = latent_seasonals + self.type_seasonal
+
+        # queries, key, values
+
+        q = self.queries * self.scale
+
+        k, v = torch.cat((
+            self.growth_and_seasonal_to_kv(torch.cat((latent_growths, latent_seasonals), dim = -2)),
+            self.level_to_kv(level_output)
+        ), dim = -2).unbind(dim = 0)
+
+        # cross attention pooling
+
+        sim = einsum('h d, b h j d -> b h j', q, k)
+        sim = sim - sim.amax(dim = -1, keepdim = True).detach()
+
+        attn = sim.softmax(dim = -1)
+        attn = self.dropout(attn)
+
+        out = einsum('b h j, b h j d -> b h d', attn, v)
+        out = rearrange(out, 'b ... -> b (...)')
+
+        out = self.to_out(out)
+
+        # project to logits
+
+        return self.to_logits(out)
