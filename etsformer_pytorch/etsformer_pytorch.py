@@ -1,4 +1,6 @@
 from math import pi
+from collections import namedtuple
+
 import torch
 import torch.nn.functional as F
 from torch import nn, einsum
@@ -6,6 +8,10 @@ from torch import nn, einsum
 from scipy.fftpack import next_fast_len
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
+
+# constants
+
+Intermediates = namedtuple('Intermediates', ['growth_latents', 'seasonal_latents', 'level_output'])
 
 # helper functions
 
@@ -343,7 +349,7 @@ class ETSFormer(nn.Module):
         latent_seasonals = torch.stack(latent_seasonals, dim = -2)
 
         if num_steps_forecast == 0:
-            return latent_growths, latent_seasonals
+            return Intermediates(latent_growths, latent_seasonals, x)
 
         latent_seasonals = rearrange(latent_seasonals, 'b n l d -> b l d n')
         extrapolated_seasonals = fourier_extrapolate(latent_seasonals, x.shape[1], x.shape[1] + num_steps_forecast)
