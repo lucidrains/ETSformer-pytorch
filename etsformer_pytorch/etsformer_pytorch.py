@@ -321,7 +321,8 @@ class ETSFormer(nn.Module):
         self,
         x,
         *,
-        num_steps_forecast = 0
+        num_steps_forecast = 0,
+        return_latents = False
     ):
         one_time_feature = x.ndim == 2
 
@@ -351,8 +352,10 @@ class ETSFormer(nn.Module):
         latent_growths = torch.stack(latent_growths, dim = -2)
         latent_seasonals = torch.stack(latent_seasonals, dim = -2)
 
+        latents = Intermediates(latent_growths, latent_seasonals, x)
+
         if num_steps_forecast == 0:
-            return Intermediates(latent_growths, latent_seasonals, x)
+            return latents
 
         latent_seasonals = rearrange(latent_seasonals, 'b n l d -> b l d n')
         extrapolated_seasonals = fourier_extrapolate(latent_seasonals, x.shape[1], x.shape[1] + num_steps_forecast)
@@ -366,6 +369,9 @@ class ETSFormer(nn.Module):
 
         if one_time_feature:
             forecasted = rearrange(forecasted, 'b n 1 -> b n')
+
+        if return_latents:
+            return forecasted, latents
 
         return forecasted
 
