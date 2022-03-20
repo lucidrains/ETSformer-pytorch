@@ -10,7 +10,7 @@ Implementation of <a href="https://arxiv.org/abs/2202.01381">ETSformer</a>, stat
 $ pip install etsformer-pytorch
 ```
 
-## Python
+## Usage
 
 ```python
 import torch
