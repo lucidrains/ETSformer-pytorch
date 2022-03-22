@@ -377,6 +377,18 @@ class ETSFormer(nn.Module):
 
 # classification wrapper
 
+class MultiheadLayerNorm(nn.Module):
+    def __init__(self, dim, heads = 1, eps = 1e-5):
+        super().__init__()
+        self.eps = eps
+        self.g = nn.Parameter(torch.ones(heads, 1, dim))
+        self.b = nn.Parameter(torch.zeros(heads, 1, dim))
+
+    def forward(self, x):
+        std = torch.var(x, dim = -1, unbiased = False, keepdim = True).sqrt()
+        mean = torch.mean(x, dim = -1, keepdim = True)
+        return (x - mean) / (std + self.eps) * self.g + self.b
+
 class ClassificationWrapper(nn.Module):
     def __init__(
         self,
@@ -388,8 +400,7 @@ class ClassificationWrapper(nn.Module):
         level_kernel_size = 3,
         growth_kernel_size = 3,
         seasonal_kernel_size = 3,
-        dropout = 0.,
-        norm_time_features_kv = False
+        dropout = 0.
     ):
         super().__init__()
         assert isinstance(etsformer, ETSFormer)
@@ -404,24 +415,24 @@ class ClassificationWrapper(nn.Module):
         self.queries = nn.Parameter(torch.randn(heads, dim_head))
 
         self.growth_to_kv = nn.Sequential(
-            nn.LayerNorm(model_dim),
             Rearrange('b n d -> b d n'),
             nn.Conv1d(model_dim, inner_dim * 2, growth_kernel_size, bias = False, padding = growth_kernel_size // 2),
-            Rearrange('... (kv h d) n -> kv ... h n d', kv = 2, h = heads)
+            Rearrange('... (kv h d) n -> ... (kv h) n d', kv = 2, h = heads),
+            MultiheadLayerNorm(dim_head, heads = 2 * heads),
         )
 
         self.seasonal_to_kv = nn.Sequential(
-            nn.LayerNorm(model_dim),
             Rearrange('b n d -> b d n'),
             nn.Conv1d(model_dim, inner_dim * 2, seasonal_kernel_size, bias = False, padding = seasonal_kernel_size // 2),
-            Rearrange('... (kv h d) n -> kv ... h n d', kv = 2, h = heads)
+            Rearrange('... (kv h d) n -> ... (kv h) n d', kv = 2, h = heads),
+            MultiheadLayerNorm(dim_head, heads = 2 * heads),
         )
 
         self.level_to_kv = nn.Sequential(
             Rearrange('b n t -> b t n'),
             nn.Conv1d(time_features, inner_dim * 2, level_kernel_size, bias = False, padding = level_kernel_size // 2),
-            Rearrange('b (kv h d) n -> kv b h n d', kv = 2, h = heads),
-            nn.LayerNorm(dim_head) if norm_time_features_kv else nn.Identity()
+            Rearrange('b (kv h d) n -> b (kv h) n d', kv = 2, h = heads),
+            MultiheadLayerNorm(dim_head, heads = 2 * heads),
         )
 
         self.to_out = nn.Linear(inner_dim, model_dim)
@@ -441,11 +452,13 @@ class ClassificationWrapper(nn.Module):
 
         q = self.queries * self.scale
 
-        k, v = torch.cat((
+        kvs = torch.cat((
             self.growth_to_kv(latent_growths),
             self.seasonal_to_kv(latent_seasonals),
             self.level_to_kv(level_output)
-        ), dim = -2).unbind(dim = 0)
+        ), dim = -2)
+
+        k, v = kvs.chunk(2, dim = 1)
 
         # cross attention pooling
 
