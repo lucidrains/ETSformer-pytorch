@@ -405,19 +405,22 @@ class ClassificationWrapper(nn.Module):
         self.growth_to_kv = nn.Sequential(
             Rearrange('b n d -> b d n'),
             nn.Conv1d(model_dim, inner_dim * 2, growth_kernel_size, bias = False, padding = growth_kernel_size // 2),
-            Rearrange('... (kv h d) n -> kv ... h n d', kv = 2, h = heads)
+            Rearrange('... (kv h d) n -> kv ... h n d', kv = 2, h = heads),
+            nn.LayerNorm(dim_head),
         )
 
         self.seasonal_to_kv = nn.Sequential(
             Rearrange('b n d -> b d n'),
             nn.Conv1d(model_dim, inner_dim * 2, seasonal_kernel_size, bias = False, padding = seasonal_kernel_size // 2),
-            Rearrange('... (kv h d) n -> kv ... h n d', kv = 2, h = heads)
+            Rearrange('... (kv h d) n -> kv ... h n d', kv = 2, h = heads),
+            nn.LayerNorm(dim_head),
         )
 
         self.level_to_kv = nn.Sequential(
             Rearrange('b n t -> b t n'),
             nn.Conv1d(time_features, inner_dim * 2, level_kernel_size, bias = False, padding = level_kernel_size // 2),
-            Rearrange('b (kv h d) n -> kv b h n d', kv = 2, h = heads)
+            Rearrange('b (kv h d) n -> kv b h n d', kv = 2, h = heads),
+            nn.LayerNorm(dim_head),
         )
 
         self.to_out = nn.Linear(inner_dim, model_dim)
