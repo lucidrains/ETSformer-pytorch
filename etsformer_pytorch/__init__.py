@@ -1,1 +1,5 @@
-from etsformer_pytorch.etsformer_pytorch import ETSFormer, ClassificationWrapper
+from etsformer_pytorch.etsformer_pytorch import (
+    ETSFormer,
+    ClassificationWrapper,
+    MHESA
+)

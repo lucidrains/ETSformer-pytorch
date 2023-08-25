@@ -73,3 +73,14 @@ logits = adapter(timeseries) # (1, 10)
     primaryClass = {cs.LG}
 }
 ```
+
+```bibtex
+@article{Sun2023RetentiveNA,
+    title   = {Retentive Network: A Successor to Transformer for Large Language Models},
+    author  = {Yutao Sun and Li Dong and Shaohan Huang and Shuming Ma and Yuqing Xia and Jilong Xue and Jianyong Wang and Furu Wei},
+    journal = {ArXiv},
+    year    = {2023},
+    volume. = {abs/2307.08621},
+    url     = {https://api.semanticscholar.org/CorpusID:259937453}
+}
+```
