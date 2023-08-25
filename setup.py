@@ -6,6 +6,7 @@ setup(
   version = '0.1.0',
   license='MIT',
   description = 'ETSTransformer - Exponential Smoothing Transformer for Time-Series Forecasting - Pytorch',
+  long_description_content_type = 'text/markdown',
   author = 'Phil Wang',
   author_email = 'lucidrains@gmail.com',
   url = 'https://github.com/lucidrains/ETSformer-pytorch',
