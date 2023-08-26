@@ -103,7 +103,11 @@ class MHESA(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.alpha = nn.Parameter(torch.randn(heads))
 
-        self.norm_heads = nn.GroupNorm(heads, dim) if norm_heads else nn.Identity()
+        self.norm_heads = nn.Sequential(
+            Rearrange('b n (h d) -> b (h d) n', h = heads),
+            nn.GroupNorm(heads, dim),
+            Rearrange('b (h d) n -> b n (h d)', h = heads)
+        ) if norm_heads else nn.Identity()
 
         self.project_in = nn.Linear(dim, dim)
         self.project_out = nn.Linear(dim, dim)
@@ -178,10 +182,10 @@ class MHESA(nn.Module):
 
         output = rearrange(output, 'b h n d -> b n (h d)')
 
-        # maybe groupnorm
-        # borrowing a trick from retnet paper
+        # maybe sub-ln from https://arxiv.org/abs/2210.06423 - retnet used groupnorm
 
         output = self.norm_heads(output)
+
         return self.project_out(output)
 
 ## frequency attention
